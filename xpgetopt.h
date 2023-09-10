@@ -1,5 +1,5 @@
-#ifndef _XPGETOPT_H_
-#define _XPGETOPT_H_
+#ifndef XPGETOPT_H
+#define XPGETOPT_H
 
 #define no_argument 0
 #define required_argument 1

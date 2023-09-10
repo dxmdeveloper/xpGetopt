@@ -18,7 +18,8 @@ static struct xpoption * find_long_option(struct xpoption long_opt_arr[], const 
 }
 
 static int find_long_option_index(struct xpoption long_opt_arr[], const char * name){
-    for(int i = 0; long_opt_arr[i].name; i++)
+    int i;
+    for(i = 0; long_opt_arr[i].name; i++)
         if(strcmp(long_opt_arr[i].name, name) == 0) return i;
     return -1;
 }
@@ -29,6 +30,7 @@ static int find_long_option_index(struct xpoption long_opt_arr[], const char * n
   * @param lopts may be NULL, but then option argument of long option will return false */
 static int is_opt_or_argopt_check(char* argv[], uint argvind, char * options, struct xpoption * lopts) {
 	char *optchloc = NULL;
+    uint i;
 	/* is option check */
 	if (argv[argvind][0] == '-' && argv[argvind][1]) return true;
 
@@ -46,7 +48,7 @@ static int is_opt_or_argopt_check(char* argv[], uint argvind, char * options, st
     }
 
 	/* check if it's argopt */
-	for (uint i = 1; argv[argvind - 1][i]; i++) {
+	for (i = 1; argv[argvind - 1][i]; i++) {
 		optchloc = strchr(options, argv[argvind - 1][i]);
 		if (optchloc && optchloc[1] == ':') {
 			if (!argv[argvind - 1][i + 1]) return true;
@@ -63,17 +65,19 @@ static int is_opt_or_argopt_check(char* argv[], uint argvind, char * options, st
 static uint argv_reorder(int argc, char* argv[], char * options) {
 	uint optend = 0;
 	uint reloc_cnt = 0;
+    uint i;
 
-	for (uint i = argc - 1; i >= 1; i--) {
+	for (i = argc - 1; i >= 1; i--) {
 		if (strcmp(argv[i], "--") == 0
         ||((!optend || options[0]=='+' || options[1]=='+') && is_opt_or_argopt_check(argv, i, options, NULL)))
 			optend = i;
 	}
 
-	for (uint i = optend - 1; i >= 1; i--) {
+	for (i = optend - 1; i >= 1; i--) {
 		if (!is_opt_or_argopt_check(argv, i, options, NULL)) {
+            uint ii;
 			char *arg2mov = argv[i];
-			for (uint ii = i; ii < optend - reloc_cnt; ii++) {
+			for (ii = i; ii < optend - reloc_cnt; ii++) {
 				argv[ii] = argv[ii + 1];
 			}
 			argv[optend - reloc_cnt] = arg2mov;
