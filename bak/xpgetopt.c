@@ -1,0 +1,191 @@
+#include "xpgetopt.h"
+#include <stdio.h>
+#include <string.h>
+
+typedef unsigned int uint;
+#define true 1
+#define false 0
+
+char *xpoptarg = NULL;
+int xpoptind = 1; /* argv argument index */
+int xpopterr = 1; /* print message about unrecognized option to stderr if not set to 0 */
+int xpoptopt = '?';
+
+static struct xpoption * find_long_option(struct xpoption long_opt_arr[], const char * name){
+    for(;long_opt_arr->name; long_opt_arr++)
+        if(strcmp(long_opt_arr->name, name) == 0) return long_opt_arr;
+    return NULL;
+}
+
+static int find_long_option_index(struct xpoption long_opt_arr[], const char * name){
+    for(int i = 0; long_opt_arr[i].name; i++)
+        if(strcmp(long_opt_arr[i].name, name) == 0) return i;
+    return -1;
+}
+
+/** @brief Function checks if given argument is option or option argument. 
+  * The function should be called after parsing long options (if xpgetopt_long used).
+  * Indexes of argv arguments after -- terminator must not be passed.
+  * @param lopts may be NULL, but then option argument of long option will return false */
+static int is_opt_or_argopt_check(char* argv[], uint argvind, char * options, struct xpoption * lopts) {
+	char *optchloc = NULL;
+	/* is option check */
+	if (argv[argvind][0] == '-' && argv[argvind][1]) return true;
+
+	/* if previous is not an option then this is not an argoptg */
+	if (argvind <= 1 || argv[argvind-1][0] != '-' || !argv[argvind-1][1]) return false;
+
+	/* argument of long option. */
+	if (argv[argvind - 1][1] == '-'){
+        struct xpoption *longopt = NULL;
+        if(!lopts) return false;
+        /* below will work correctly even if long option has `=` sign */
+        if((longopt = find_long_option(lopts, argv[argvind-1]+2))){
+            return longopt->has_arg == required_argument ? true : false;
+        }
+    }
+
+	/* check if it's argopt */
+	for (uint i = 1; argv[argvind - 1][i]; i++) {
+		optchloc = strchr(options, argv[argvind - 1][i]);
+		if (optchloc && optchloc[1] == ':') {
+			if (!argv[argvind - 1][i + 1]) return true;
+			else return false;
+		}
+	}
+
+	return false;
+}
+
+/** @brief Function that reorders arg vector arguments. non-option arguments are relocated to the end of the vector.
+  * The function should be called after parsing long options (if xpgetopt_long used).
+  * @return first non-option argument index */
+static uint argv_reorder(int argc, char* argv[], char * options) {
+	uint optend = 0;
+	uint reloc_cnt = 0;
+
+	for (uint i = argc - 1; i >= 1; i--) {
+		if (strcmp(argv[i], "--") == 0
+        ||((!optend || options[0]=='+' || options[1]=='+') && is_opt_or_argopt_check(argv, i, options, NULL)))
+			optend = i;
+	}
+
+	for (uint i = optend - 1; i >= 1; i--) {
+		if (!is_opt_or_argopt_check(argv, i, options, NULL)) {
+			char *arg2mov = argv[i];
+			for (uint ii = i; ii < optend - reloc_cnt; ii++) {
+				argv[ii] = argv[ii + 1];
+			}
+			argv[optend - reloc_cnt] = arg2mov;
+			reloc_cnt++;
+		}
+	}
+	return optend - reloc_cnt + 1;
+}
+
+static int parse_short(char *argv[], char *options, char *charptr, uint non_opt_start){
+    char retval = '\0';
+    char *optstrcharloc = NULL;
+
+    optstrcharloc = strchr(options, *charptr);
+    if (!optstrcharloc) {
+        /* unrecognized option */
+        xpoptopt = *charptr;
+        if (xpopterr) fprintf(stderr, "unrecognized option: %c\r\n", *charptr);
+        retval = '?';
+    }
+    else if (optstrcharloc[1] == ':') {
+        /*option with argument */
+        if (charptr[1]) {
+            xpoptarg = charptr + 1;
+            retval = *charptr;
+        }
+        else if (xpoptind + 1 < non_opt_start) {
+            xpoptarg = argv[xpoptind++ + 1];
+            retval = *charptr;
+        }
+        else {
+            if (xpopterr && options[0] != ':') fprintf(stderr, "missing option argument\r\n");
+            retval = options[0] == ':' ? ':' : '?';
+        }
+
+    }
+    else retval = *charptr;
+
+    charptr++;
+    xpoptind++;
+    if (!*charptr) charptr = NULL;
+    return retval;
+}
+
+static int parse_long(char *argv[], char * options, void *long_options, int *opt_indexp, uint non_opt_start){
+    char * tokp = NULL;
+    int loption_index = 0;
+    struct xpoption * loption = NULL;
+
+    tokp = strtok(argv[xpoptind], "=");
+    loption_index = find_long_option_index(long_options, argv[xpoptind]+2);
+    xpoptind++;
+    if(opt_indexp) *opt_indexp = loption_index;
+    if(loption_index == -1){
+        if (xpopterr) fprintf(stderr, "unrecognized option: %s\r\n", argv[xpoptind-1]+2);
+        return '?';
+    }
+    loption = &((struct xpoption *)long_options)[loption_index];
+    /* option argument parse */
+    if(loption->has_arg == required_argument){
+        if(tokp) {
+            *(tokp-1) = '='; /* revert changes made by strtok */
+            xpoptarg = tokp;
+        }
+        else if(xpoptind < non_opt_start) xpoptarg = argv[xpoptind++];
+        else {
+            if(xpopterr && options[0] != ':') fprintf(stderr, "missing option argument\r\n");
+            if(loption->flag) *loption->flag = options[0] == ':' ? ':' : '?';
+            else xpoptopt = loption->value;
+            return options[0] == ':' ? ':' : '?';
+        }
+    }
+
+    if(loption->flag) {
+        *loption->flag = loption->value;
+        return 0;
+    }
+    return loption->value;
+}
+
+static int getopt_body(int argc, char *argv[], char *options, void *long_options, int *opt_indexp){
+    static char *nextch = NULL;
+    static uint non_opt_start;
+
+    if (xpoptind == 0) xpoptind = 1;
+    if (xpoptind == 1) non_opt_start = argv_reorder(argc, argv, options);
+    if (xpoptind >= non_opt_start) {
+        if(xpoptind < argc && strcmp(argv[xpoptind], "--") == 0) xpoptind++;
+        return -1;
+    }
+
+    if (!nextch) nextch = &argv[xpoptind][1];
+
+    for (; xpoptind < non_opt_start; xpoptind++) {
+
+        /* long option */
+        if (argv[xpoptind][1] == '-'){
+            if(!long_options) continue;
+            return parse_long(argv, options, long_options, opt_indexp, non_opt_start);
+        }
+
+        /* short option */
+        return parse_short(argv, options, nextch, non_opt_start);
+    }
+    return -1; /* the line should never be executed */
+}
+
+int xpgetopt(int argc, char *argv[], char *options){
+	return getopt_body(argc, argv, options, NULL, NULL);
+}
+
+int xpgetopt_long(int argc, char **argv, char *options, void *long_options, int *opt_indexp) {
+    return getopt_body(argc, argv, options, long_options, opt_indexp);
+}
+
