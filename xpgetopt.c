@@ -123,11 +123,12 @@ static int parse_short(char *argv[], char *options, char *charptr, uint non_opt_
 }
 
 static int parse_long(char *argv[], char * options, void *long_options, int *opt_indexp, uint non_opt_start){
-    char * tokp = NULL;
+    char * eq_sign = NULL;
     int loption_index = 0;
     struct xpoption * loption = NULL;
 
-    tokp = strtok(argv[xpoptind], "=");
+    if((eq_sign = strchr(argv[xpoptind], '=')))
+        *eq_sign = '\0';
     loption_index = find_long_option_index(long_options, argv[xpoptind]+2);
     xpoptind++;
     if(opt_indexp) *opt_indexp = loption_index;
@@ -138,9 +139,9 @@ static int parse_long(char *argv[], char * options, void *long_options, int *opt
     loption = &((struct xpoption *)long_options)[loption_index];
     /* option argument parse */
     if(loption->has_arg == required_argument){
-        if(tokp) {
-            *(tokp-1) = '='; /* revert changes made by strtok */
-            xpoptarg = tokp;
+        if(eq_sign) {
+            *eq_sign = '=';
+            xpoptarg = eq_sign +1;
         }
         else if(xpoptind < non_opt_start) xpoptarg = argv[xpoptind++];
         else {
