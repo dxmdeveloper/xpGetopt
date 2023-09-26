@@ -22,6 +22,9 @@ static int find_long_option_index(struct xpoption long_opt_arr[], const char * n
     int i;
     size_t namelen = 0;
     for(i = 0; long_opt_arr[i].name; i++) {
+        /* optimization - in most cases the line below will skip not matching option without checking whole name */
+        if(long_opt_arr[i].name[0] != name[0]) continue;
+
         namelen = strlen(long_opt_arr[i].name);
         if (strncmp(long_opt_arr[i].name, name, namelen) == 0
         && (!name[namelen] || name[namelen] == '=')) return i;
@@ -102,7 +105,7 @@ static int parse_short(char *argv[], char *options, char **nextchpp, uint non_op
         retval = '?';
     }
     else if (optstrcharloc[1] == ':') {
-        /*option with argument */
+        /* option with argument */
         if ((*nextchpp)[1]) {
             xpoptarg = *nextchpp + 1;
             retval = **nextchpp;
@@ -115,13 +118,11 @@ static int parse_short(char *argv[], char *options, char **nextchpp, uint non_op
             if (xpopterr && options[0] != ':') fprintf(stderr, "missing option argument\r\n");
             retval = options[0] == ':' ? ':' : '?';
         }
-
     }
     else retval = **nextchpp;
 
-    (*nextchpp)++;
     xpoptind++;
-    if (!**nextchpp) *nextchpp = NULL;
+    if(*nextchpp && !*(*nextchpp)++) *nextchpp = NULL;
     return retval;
 }
 
@@ -194,4 +195,3 @@ int xpgetopt(int argc, char *argv[], char *options){
 int xpgetopt_long(int argc, char **argv, char *options, void *long_options, int *opt_indexp) {
     return getopt_body(argc, argv, options, long_options, opt_indexp);
 }
-
