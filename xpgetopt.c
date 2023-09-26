@@ -1,6 +1,7 @@
 #include "xpgetopt.h"
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 
 typedef unsigned int uint;
 #define true 1
@@ -19,13 +20,16 @@ static struct xpoption * find_long_option(struct xpoption long_opt_arr[], const 
 
 static int find_long_option_index(struct xpoption long_opt_arr[], const char * name){
     int i;
-    for(i = 0; long_opt_arr[i].name; i++)
-        if(strcmp(long_opt_arr[i].name, name) == 0) return i;
+    size_t namelen = 0;
+    for(i = 0; long_opt_arr[i].name; i++) {
+        namelen = strlen(long_opt_arr[i].name);
+        if (strncmp(long_opt_arr[i].name, name, namelen) == 0
+        && (!name[namelen] || name[namelen] == '=')) return i;
+    }
     return -1;
 }
 
-/** @brief Function checks if given argument is option or option argument. 
-  * The function should be called after parsing long options (if xpgetopt_long used).
+/** @brief Function checks if given argument is option or option argument.
   * Indexes of argv arguments after -- terminator must not be passed.
   * @param lopts may be NULL, but then option argument of long option will return false */
 static int is_opt_or_argopt_check(char* argv[], uint argvind, char * options, struct xpoption * lopts) {
@@ -47,8 +51,8 @@ static int is_opt_or_argopt_check(char* argv[], uint argvind, char * options, st
         }
     }
 
-	/* check if it's argopt */
-	for (i = 1; argv[argvind - 1][i]; i++) {
+	/* check if it's argopt of short opt */
+	for (i = 1; isalnum(argv[argvind - 1][i]); i++) {
 		optchloc = strchr(options, argv[argvind - 1][i]);
 		if (optchloc && optchloc[1] == ':') {
 			if (!argv[argvind - 1][i + 1]) return true;
@@ -60,53 +64,52 @@ static int is_opt_or_argopt_check(char* argv[], uint argvind, char * options, st
 }
 
 /** @brief Function that reorders arg vector arguments. non-option arguments are relocated to the end of the vector.
-  * The function should be called after parsing long options (if xpgetopt_long used).
   * @return first non-option argument index */
-static uint argv_reorder(int argc, char* argv[], char * options) {
-	uint optend = 0;
-	uint reloc_cnt = 0;
+static uint argv_reorder(int argc, char *argv[], char *options, void * long_options) {
+    uint optend = 0;
+    uint reloc_cnt = 0;
     uint i;
 
-	for (i = argc - 1; i >= 1; i--) {
-		if (strcmp(argv[i], "--") == 0
-        ||((!optend || options[0]=='+' || options[1]=='+') && is_opt_or_argopt_check(argv, i, options, NULL)))
-			optend = i;
-	}
+    for (i = argc - 1; i >= 1; i--) {
+        if (strcmp(argv[i], "--") == 0
+            || ((!optend || options[0] == '+' || options[1] == '+') && is_opt_or_argopt_check(argv, i, options, long_options)))
+            optend = i;
+    }
 
-	for (i = optend - 1; i >= 1; i--) {
-		if (!is_opt_or_argopt_check(argv, i, options, NULL)) {
+    for (i = optend - 1; i >= 1; i--) {
+        if (!is_opt_or_argopt_check(argv, i, options, long_options)) {
             uint ii;
-			char *arg2mov = argv[i];
-			for (ii = i; ii < optend - reloc_cnt; ii++) {
-				argv[ii] = argv[ii + 1];
-			}
-			argv[optend - reloc_cnt] = arg2mov;
-			reloc_cnt++;
-		}
-	}
-	return optend - reloc_cnt + 1;
+            char *arg2mov = argv[i];
+            for (ii = i; ii < optend - reloc_cnt; ii++) {
+                argv[ii] = argv[ii + 1];
+            }
+            argv[optend - reloc_cnt] = arg2mov;
+            reloc_cnt++;
+        }
+    }
+    return optend - reloc_cnt + 1;
 }
 
-static int parse_short(char *argv[], char *options, char *charptr, uint non_opt_start){
+static int parse_short(char *argv[], char *options, char **nextchpp, uint non_opt_start){
     char retval = '\0';
     char *optstrcharloc = NULL;
 
-    optstrcharloc = strchr(options, *charptr);
-    if (!optstrcharloc) {
+    optstrcharloc = strchr(options, **nextchpp);
+    if (!optstrcharloc || !isalnum(**nextchpp)) {
         /* unrecognized option */
-        xpoptopt = *charptr;
-        if (xpopterr) fprintf(stderr, "unrecognized option: %c\r\n", *charptr);
+        xpoptopt = **nextchpp;
+        if (xpopterr) fprintf(stderr, "unrecognized option: %c\r\n", **nextchpp);
         retval = '?';
     }
     else if (optstrcharloc[1] == ':') {
         /*option with argument */
-        if (charptr[1]) {
-            xpoptarg = charptr + 1;
-            retval = *charptr;
+        if ((*nextchpp)[1]) {
+            xpoptarg = *nextchpp + 1;
+            retval = **nextchpp;
         }
         else if (xpoptind + 1 < non_opt_start) {
             xpoptarg = argv[xpoptind++ + 1];
-            retval = *charptr;
+            retval = **nextchpp;
         }
         else {
             if (xpopterr && options[0] != ':') fprintf(stderr, "missing option argument\r\n");
@@ -114,11 +117,11 @@ static int parse_short(char *argv[], char *options, char *charptr, uint non_opt_
         }
 
     }
-    else retval = *charptr;
+    else retval = **nextchpp;
 
-    charptr++;
+    (*nextchpp)++;
     xpoptind++;
-    if (!*charptr) charptr = NULL;
+    if (!**nextchpp) *nextchpp = NULL;
     return retval;
 }
 
@@ -127,8 +130,8 @@ static int parse_long(char *argv[], char * options, void *long_options, int *opt
     int loption_index = 0;
     struct xpoption * loption = NULL;
 
-    if((eq_sign = strchr(argv[xpoptind], '=')))
-        *eq_sign = '\0';
+    eq_sign = strchr(argv[xpoptind], '=');
+
     loption_index = find_long_option_index(long_options, argv[xpoptind]+2);
     xpoptind++;
     if(opt_indexp) *opt_indexp = loption_index;
@@ -140,10 +143,9 @@ static int parse_long(char *argv[], char * options, void *long_options, int *opt
     /* option argument parse */
     if(loption->has_arg == required_argument){
         if(eq_sign) {
-            *eq_sign = '=';
             xpoptarg = eq_sign +1;
         }
-        else if(xpoptind < non_opt_start) xpoptarg = argv[xpoptind++];
+        else if(xpoptind + 1 < non_opt_start) xpoptarg = argv[xpoptind++];
         else {
             if(xpopterr && options[0] != ':') fprintf(stderr, "missing option argument\r\n");
             if(loption->flag) *loption->flag = options[0] == ':' ? ':' : '?';
@@ -164,13 +166,11 @@ static int getopt_body(int argc, char *argv[], char *options, void *long_options
     static uint non_opt_start;
 
     if (xpoptind == 0) xpoptind = 1;
-    if (xpoptind == 1) non_opt_start = argv_reorder(argc, argv, options);
+    if (xpoptind == 1) non_opt_start = argv_reorder(argc, argv, options, long_options);
     if (xpoptind >= non_opt_start) {
         if(xpoptind < argc && strcmp(argv[xpoptind], "--") == 0) xpoptind++;
         return -1;
     }
-
-    if (!nextch) nextch = &argv[xpoptind][1];
 
     for (; xpoptind < non_opt_start; xpoptind++) {
 
@@ -181,7 +181,8 @@ static int getopt_body(int argc, char *argv[], char *options, void *long_options
         }
 
         /* short option */
-        return parse_short(argv, options, nextch, non_opt_start);
+        if (!nextch) nextch = &argv[xpoptind][1];
+        return parse_short(argv, options, &nextch, non_opt_start);
     }
     return -1; /* the line should never be executed */
 }
