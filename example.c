@@ -2,7 +2,7 @@
 #include <string.h>
 #include "xpgetopt.h"
 
-int main(int argc, char ** argv){
+int xpgetopt_main(int argc, char ** argv){
 	int opt = -1;
     int flag = 0;
 
