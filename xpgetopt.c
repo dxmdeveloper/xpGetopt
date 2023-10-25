@@ -37,7 +37,7 @@ static int find_long_option_index(struct xpoption long_opt_arr[], const char * n
   * @param lopts may be NULL, but then option argument of long option will return false */
 static int is_opt_or_argopt_check(char* argv[], uint argvind, char * options, struct xpoption * lopts) {
 	char *optchloc = NULL;
-    uint i;
+    	uint i;
 	/* is option check */
 	if (argv[argvind][0] == '-' && argv[argvind][1]) return true;
 
@@ -69,9 +69,10 @@ static int is_opt_or_argopt_check(char* argv[], uint argvind, char * options, st
 /** @brief Function that reorders arg vector arguments. non-option arguments are relocated to the end of the vector.
   * @return first non-option argument index */
 static uint argv_reorder(int argc, char *argv[], char *options, void * long_options) {
-    uint optend = 0;
+    int optend = 0;
+    int i;
     uint reloc_cnt = 0;
-    uint i;
+    
 
     for (i = argc - 1; i >= 1; i--) {
         if (strcmp(argv[i], "--") == 0
